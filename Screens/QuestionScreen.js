@@ -17,7 +17,20 @@ import { useState } from "react";
 import { Formik } from "formik";
 import * as Yup from "yup";
 
-function QuestionScreen({ navigation }) {
+// Default mode if none selected (for backward compatibility)
+const DEFAULT_MODE = {
+  id: "three-card",
+  title: "🔮 Three Card Reading",
+  subtitle: "Past • Present • Future",
+  description:
+    "Classic three-card spread for general guidance and life insights",
+  cardCount: 3,
+};
+
+function QuestionScreen({ navigation, route }) {
+  // Get mode from navigation params, or use default
+  const mode = route.params?.mode || DEFAULT_MODE;
+
   const submit = (values, { resetForm }) => {
     // Construct the date number as needed
     const date = new Date();
@@ -29,23 +42,227 @@ function QuestionScreen({ navigation }) {
       date.getMinutes() +
       date.getSeconds();
 
-    // Use React Navigation to navigate to the Answer screen with the form values
-    navigation.navigate("Answer", {
-      submitTime: dateNumber, // Pass the submitTime
-      question: values.question, // Pass the question from form values
-      number1: values.number1, // Pass number1 from form values
-      number2: values.number2, // Pass number2 from form values
-      number3: values.number3, // Pass number3 from form values
-    });
+    // Collect the required number of numbers based on mode
+    const numbers = [];
+    for (let i = 1; i <= mode.cardCount; i++) {
+      numbers.push(values[`number${i}`]);
+    }
+
+    // For decision mode, also pass the option descriptions
+    const navigationParams = {
+      submitTime: dateNumber,
+      question: values.question,
+      numbers: numbers,
+      mode: mode,
+    };
+
+    // Add option descriptions for decision mode
+    if (mode.id === "decision") {
+      navigationParams.option1Description = values.option1;
+      navigationParams.option2Description = values.option2;
+    }
+
+    navigation.navigate("Answer", navigationParams);
     resetForm();
   };
+
   const [loading, isLoading] = useState(true);
-  const validationSchema = Yup.object().shape({
-    question: Yup.string().required().label("Question"),
-    number1: Yup.number().required().min(1).max(100000).label("Number1"),
-    number2: Yup.number().required().min(1).max(100000).label("Number2"),
-    number3: Yup.number().required().min(1).max(100000).label("Number3"),
-  });
+
+  // Dynamic validation schema based on mode
+  const getValidationSchema = (mode) => {
+    const schema = {
+      question: Yup.string().required().label("Question"),
+    };
+
+    // Add validation for each number input based on card count
+    for (let i = 1; i <= mode.cardCount; i++) {
+      schema[`number${i}`] = Yup.number()
+        .required()
+        .min(1)
+        .max(100000)
+        .label(`Number${i}`);
+    }
+
+    // Add option validation for decision mode
+    if (mode.id === "decision") {
+      schema.option1 = Yup.string().required().label("Option1");
+      schema.option2 = Yup.string().required().label("Option2");
+    }
+
+    return Yup.object().shape(schema);
+  };
+
+  const validationSchema = getValidationSchema(mode);
+
+  // Dynamic initial values based on mode
+  const getInitialValues = (mode) => {
+    const values = { question: "" };
+    for (let i = 1; i <= mode.cardCount; i++) {
+      values[`number${i}`] = "";
+    }
+    // Add option fields for decision mode
+    if (mode.id === "decision") {
+      values.option1 = "";
+      values.option2 = "";
+    }
+    return values;
+  };
+
+  // Helper functions for mode-specific content
+  const getPromptForMode = (mode) => {
+    switch (mode.id) {
+      case "three-card":
+        return "Type in the question you want to ask in any language:";
+      case "decision":
+        return "What decision are you trying to make?";
+      case "relationship":
+        return "What would you like to know about your relationship?";
+      default:
+        return "Type in the question you want to ask in any language:";
+    }
+  };
+
+  const getPlaceholderForMode = (mode) => {
+    switch (mode.id) {
+      case "three-card":
+        return "What would you like to know?";
+      case "decision":
+        return "What decision are you trying to make?";
+      case "relationship":
+        return "How does my partner feel about me? What is our future together?";
+      default:
+        return "What would you like to know?";
+    }
+  };
+
+  const getButtonText = (mode) => {
+    return `Draw ${mode.cardCount} Tarot Cards`;
+  };
+
+  const getNumbersPromptText = (mode) => {
+    switch (mode.id) {
+      case "decision":
+        return "Choose numbers for your decision reading:";
+      case "three-card":
+        return "Enter three different numbers to start your Tarot Cards Draw!";
+      case "relationship":
+        return "Enter five different numbers for your relationship reading:";
+      default:
+        return `Enter ${mode.cardCount} different numbers for your reading:`;
+    }
+  };
+
+  const getNumberPlaceholder = (index, mode) => {
+    switch (mode.id) {
+      case "three-card":
+        const threeCardLabels = ["Past", "Present", "Future"];
+        return `${threeCardLabels[index - 1]} (1-100000)`;
+      case "decision":
+        const decisionLabels = ["Option 1", "Option 2"];
+        return `${decisionLabels[index - 1]} (1-100000)`;
+      case "relationship":
+        const relationshipLabels = [
+          "My feeling",
+          "His/Her feeling",
+          "Past situation",
+          "Present situation",
+          "Future situation",
+        ];
+        return `${relationshipLabels[index - 1]} (1-100000)`;
+      default:
+        const ordinals = ["First", "Second", "Third", "Fourth", "Fifth"];
+        return `${ordinals[index - 1]} number (1-100000)`;
+    }
+  };
+
+  // Render option inputs for decision mode
+  const renderOptionInputs = (
+    mode,
+    values,
+    setFieldValue,
+    setFieldTouched,
+    touched,
+    errors
+  ) => {
+    if (mode.id !== "decision") return null;
+
+    return (
+      <View style={styles.optionsContainer}>
+        {!loading && (
+          <Text style={styles.text}>Describe your two options:</Text>
+        )}
+        {!loading && (
+          <TextInput
+            style={styles.optionInput}
+            onBlur={() => setFieldTouched("option1")}
+            placeholderTextColor="#999"
+            placeholder="Option 1: What is this choice?"
+            value={values.option1}
+            onChangeText={(text) => setFieldValue("option1", text)}
+            multiline
+            numberOfLines={2}
+          />
+        )}
+        {!loading && touched.option1 && errors.option1 && (
+          <Text style={styles.error}>{errors.option1}</Text>
+        )}
+        {!loading && (
+          <TextInput
+            style={styles.optionInput}
+            onBlur={() => setFieldTouched("option2")}
+            placeholderTextColor="#999"
+            placeholder="Option 2: What is this choice?"
+            value={values.option2}
+            onChangeText={(text) => setFieldValue("option2", text)}
+            multiline
+            numberOfLines={2}
+          />
+        )}
+        {!loading && touched.option2 && errors.option2 && (
+          <Text style={styles.error}>{errors.option2}</Text>
+        )}
+      </View>
+    );
+  };
+
+  // Render number inputs dynamically
+  const renderNumberInputs = (
+    mode,
+    values,
+    setFieldValue,
+    setFieldTouched,
+    touched,
+    errors
+  ) => {
+    const inputs = [];
+
+    for (let i = 1; i <= mode.cardCount; i++) {
+      inputs.push(
+        <View key={i}>
+          {!loading && (
+            <TextInput
+              style={styles.textInput}
+              onBlur={() => setFieldTouched(`number${i}`)}
+              placeholderTextColor="#999"
+              placeholder={getNumberPlaceholder(i, mode)}
+              value={values[`number${i}`]}
+              onChangeText={(text) => setFieldValue(`number${i}`, text)}
+              keyboardType="numeric"
+              returnKeyType={i === mode.cardCount ? "done" : "next"}
+              onSubmitEditing={
+                i === mode.cardCount ? Keyboard.dismiss : undefined
+              }
+            />
+          )}
+          {!loading && touched[`number${i}`] && errors[`number${i}`] && (
+            <Text style={styles.error}>{errors[`number${i}`]}</Text>
+          )}
+        </View>
+      );
+    }
+
+    return inputs;
+  };
 
   return (
     <ImageBackground
@@ -63,12 +280,7 @@ function QuestionScreen({ navigation }) {
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <Formik
-              initialValues={{
-                question: "",
-                number1: "",
-                number2: "",
-                number3: "",
-              }}
+              initialValues={getInitialValues(mode)}
               onSubmit={submit}
               validationSchema={validationSchema}
             >
@@ -87,11 +299,27 @@ function QuestionScreen({ navigation }) {
                   keyboardShouldPersistTaps="handled"
                   automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
                 >
+                  {/* Mode display section */}
+                  {!loading && (
+                    <View style={styles.modeDisplay}>
+                      <Text style={styles.modeTitle}>{mode.title}</Text>
+                      <Text style={styles.modeDescription}>
+                        {mode.description}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.changeModeButton}
+                        onPress={() => navigation.navigate("ModeSelection")}
+                      >
+                        <Text style={styles.changeModeText}>
+                          Change Reading Type
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
                   <View style={styles.questionContainer}>
                     {!loading && (
-                      <Text style={styles.text}>
-                        Type in the question you want to ask in any language:
-                      </Text>
+                      <Text style={styles.text}>{getPromptForMode(mode)}</Text>
                     )}
                     {!loading && (
                       <TextInput
@@ -102,7 +330,7 @@ function QuestionScreen({ navigation }) {
                         value={values.question}
                         onChangeText={(text) => setFieldValue("question", text)}
                         placeholderTextColor="#999"
-                        placeholder="What would you like to know?"
+                        placeholder={getPlaceholderForMode(mode)}
                         returnKeyType="done"
                         blurOnSubmit={true}
                       />
@@ -112,64 +340,31 @@ function QuestionScreen({ navigation }) {
                     )}
                   </View>
 
+                  {/* Option inputs for decision mode */}
+                  {renderOptionInputs(
+                    mode,
+                    values,
+                    setFieldValue,
+                    setFieldTouched,
+                    touched,
+                    errors
+                  )}
+
                   <View style={styles.numbersInputContainer}>
                     {!loading && (
                       <Text style={styles.text}>
-                        Enter three different numbers to start your Tarot Cards
-                        Draw!
+                        {getNumbersPromptText(mode)}
                       </Text>
                     )}
-                    {!loading && (
-                      <TextInput
-                        style={styles.textInput}
-                        onBlur={() => setFieldTouched("number1")}
-                        placeholderTextColor="#999"
-                        placeholder="First number (1-100000)"
-                        value={values.number1}
-                        onChangeText={(text) => setFieldValue("number1", text)}
-                        keyboardType="numeric"
-                        returnKeyType="next"
-                        onSubmitEditing={() => {
-                          // Focus next input if available
-                          if (values.number1) {
-                            // You can add ref focusing here if needed
-                          }
-                        }}
-                      />
-                    )}
-                    {!loading && touched.number1 && errors.number1 && (
-                      <Text style={styles.error}>{errors.number1}</Text>
-                    )}
-                    {!loading && (
-                      <TextInput
-                        style={styles.textInput}
-                        onBlur={() => setFieldTouched("number2")}
-                        placeholderTextColor="#999"
-                        placeholder="Second number (1-100000)"
-                        value={values.number2}
-                        onChangeText={(text) => setFieldValue("number2", text)}
-                        keyboardType="numeric"
-                        returnKeyType="next"
-                      />
-                    )}
-                    {!loading && touched.number2 && errors.number2 && (
-                      <Text style={styles.error}>{errors.number2}</Text>
-                    )}
-                    {!loading && (
-                      <TextInput
-                        style={styles.textInput}
-                        onBlur={() => setFieldTouched("number3")}
-                        placeholderTextColor="#999"
-                        placeholder="Third number (1-100000)"
-                        value={values.number3}
-                        onChangeText={(text) => setFieldValue("number3", text)}
-                        keyboardType="numeric"
-                        returnKeyType="done"
-                        onSubmitEditing={Keyboard.dismiss}
-                      />
-                    )}
-                    {!loading && touched.number3 && errors.number3 && (
-                      <Text style={styles.error}>{errors.number3}</Text>
+
+                    {/* Dynamic number inputs */}
+                    {renderNumberInputs(
+                      mode,
+                      values,
+                      setFieldValue,
+                      setFieldTouched,
+                      touched,
+                      errors
                     )}
                   </View>
 
@@ -182,7 +377,9 @@ function QuestionScreen({ navigation }) {
                       }}
                       activeOpacity={0.8}
                     >
-                      <Text style={styles.buttonText}>Draw Tarot Cards</Text>
+                      <Text style={styles.buttonText}>
+                        {getButtonText(mode)}
+                      </Text>
                     </TouchableOpacity>
                   )}
 
@@ -270,6 +467,24 @@ const styles = StyleSheet.create({
   questionContainer: {
     width: "100%",
   },
+  // NEW: Options container for decision mode
+  optionsContainer: {
+    marginTop: 20,
+    width: "100%",
+  },
+  optionInput: {
+    color: "black",
+    fontSize: 16,
+    textAlign: "left",
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    marginTop: 15,
+    borderRadius: 15,
+    padding: 15,
+    minHeight: 60,
+    textAlignVertical: "top",
+    borderWidth: 1,
+    borderColor: "rgba(244, 92, 101, 0.3)",
+  },
   button: {
     backgroundColor: "#f45c65",
     borderRadius: 25,
@@ -294,7 +509,39 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   bottomSpacing: {
-    height: 100, // Extra space at bottom for keyboard
+    height: 100,
+  },
+  // Mode display styles
+  modeDisplay: {
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 20,
+    width: "100%",
+    alignItems: "center",
+  },
+  modeTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#f45c65",
+    marginBottom: 5,
+  },
+  modeDescription: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  changeModeButton: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    backgroundColor: "#f45c65",
+    borderRadius: 20,
+  },
+  changeModeText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
 
